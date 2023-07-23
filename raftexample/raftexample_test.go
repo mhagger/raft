@@ -185,10 +185,11 @@ func TestProposeOnCommit(t *testing.T) {
 		newFeedbackFSM(3, 99, 300),
 	}
 	clus := newCluster(fsms[0], fsms[1], fsms[2])
+	defer clus.Cleanup()
+
 	for i := range fsms {
 		fsms[i].peer = clus.peers[i]
 	}
-	defer clus.Cleanup()
 
 	var wg sync.WaitGroup
 	for _, fsm := range fsms {
