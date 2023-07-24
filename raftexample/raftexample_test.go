@@ -34,6 +34,8 @@ import (
 type peer struct {
 	id          uint64
 	name        string
+	raftdir     string
+	snapdir     string
 	node        *raftNode
 	proposeC    chan string
 	confChangeC chan raftpb.ConfChange
@@ -43,6 +45,8 @@ func newPeer(id uint64) *peer {
 	peer := peer{
 		id:          id,
 		name:        fmt.Sprintf("http://127.0.0.1:%d", 10000+(id-1)),
+		raftdir:     fmt.Sprintf("raftexample-%d", id),
+		snapdir:     fmt.Sprintf("raftexample-%d-snap", id),
 		proposeC:    make(chan string, 1),
 		confChangeC: make(chan raftpb.ConfChange, 1),
 	}
@@ -51,12 +55,11 @@ func newPeer(id uint64) *peer {
 }
 
 func (peer *peer) start(fsm FSM, peerNames []string, join bool) {
-	snapdir := fmt.Sprintf("raftexample-%d-snap", peer.id)
-	os.RemoveAll(fmt.Sprintf("raftexample-%d", peer.id))
-	os.RemoveAll(snapdir)
+	os.RemoveAll(peer.raftdir)
+	os.RemoveAll(peer.snapdir)
 
 	snapshotLogger := zap.NewExample()
-	snapshotStorage, err := newSnapshotStorage(snapshotLogger, snapdir)
+	snapshotStorage, err := newSnapshotStorage(snapshotLogger, peer.snapdir)
 	if err != nil {
 		log.Fatalf("raftexample: %v", err)
 	}
@@ -66,6 +69,12 @@ func (peer *peer) start(fsm FSM, peerNames []string, join bool) {
 		fsm, snapshotStorage,
 		peer.proposeC, peer.confChangeC,
 	)
+}
+
+// Cleanup cleans up temporary files used by the peer.
+func (peer *peer) cleanup() {
+	os.RemoveAll(peer.raftdir)
+	os.RemoveAll(peer.snapdir)
 }
 
 type nullFSM struct {
@@ -111,11 +120,10 @@ func newCluster(fsms ...FSM) *cluster {
 	return &clus
 }
 
-// Cleanup cleans up temporary files used by the test cluster.
+// Cleanup cleans up the peers in the test cluster.
 func (clus *cluster) Cleanup() {
-	for i := range clus.peers {
-		os.RemoveAll(fmt.Sprintf("raftexample-%d", i+1))
-		os.RemoveAll(fmt.Sprintf("raftexample-%d-snap", i+1))
+	for _, peer := range clus.peers {
+		peer.cleanup()
 	}
 }
 
