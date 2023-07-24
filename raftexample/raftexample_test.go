@@ -38,7 +38,13 @@ type peer struct {
 	fsm         FSM
 }
 
-type nullFSM struct{}
+type nullFSM struct {
+	id uint64
+}
+
+func (fsm nullFSM) String() string {
+	return fmt.Sprintf("node %d", fsm.id)
+}
 
 func (nullFSM) TakeSnapshot() ([]byte, error) {
 	return nil, nil
@@ -136,15 +142,14 @@ func (clus *cluster) closeNoErrors(t *testing.T) {
 type feedbackFSM struct {
 	nullFSM
 	peer     *peer
-	id       int
 	reEcho   int
 	expected int
 	received int
 }
 
-func newFeedbackFSM(id int, reEcho int, expected int) *feedbackFSM {
+func newFeedbackFSM(id uint64, reEcho int, expected int) *feedbackFSM {
 	return &feedbackFSM{
-		id:       id,
+		nullFSM:  nullFSM{id},
 		reEcho:   reEcho,
 		expected: expected,
 	}
@@ -221,7 +226,7 @@ func TestProposeOnCommit(t *testing.T) {
 
 // TestCloseProposerBeforeReplay tests closing the producer before raft starts.
 func TestCloseProposerBeforeReplay(t *testing.T) {
-	clus := newCluster(nullFSM{})
+	clus := newCluster(nullFSM{1})
 	// close before replay so raft never starts
 	defer clus.closeNoErrors(t)
 }
@@ -229,7 +234,7 @@ func TestCloseProposerBeforeReplay(t *testing.T) {
 // TestCloseProposerInflight tests closing the producer while
 // committed messages are being published to the client.
 func TestCloseProposerInflight(t *testing.T) {
-	clus := newCluster(nullFSM{})
+	clus := newCluster(nullFSM{1})
 	defer clus.closeNoErrors(t)
 
 	var wg sync.WaitGroup
@@ -326,7 +331,7 @@ func TestPutAndGetKeyValue(t *testing.T) {
 
 // TestAddNewNode tests adding new node to the existing cluster.
 func TestAddNewNode(t *testing.T) {
-	clus := newCluster(nullFSM{}, nullFSM{}, nullFSM{})
+	clus := newCluster(nullFSM{1}, nullFSM{2}, nullFSM{3})
 	defer clus.closeNoErrors(t)
 
 	id := uint64(4)
@@ -359,7 +364,7 @@ func TestAddNewNode(t *testing.T) {
 
 	startRaftNode(
 		id, append(clus.peerNames, newNodeURL), true,
-		nullFSM{}, snapshotStorage,
+		nullFSM{4}, snapshotStorage,
 		proposeC, confChangeC,
 	)
 
@@ -392,9 +397,12 @@ func TestSnapshot(t *testing.T) {
 		snapshotCatchUpEntriesN = prevSnapshotCatchUpEntriesN
 	}()
 
-	sw := snapshotWatcher{C: make(chan struct{})}
+	sw := snapshotWatcher{
+		nullFSM: nullFSM{1},
+		C:       make(chan struct{}),
+	}
 
-	clus := newCluster(sw, nullFSM{}, nullFSM{})
+	clus := newCluster(sw, nullFSM{2}, nullFSM{3})
 	defer clus.closeNoErrors(t)
 
 	go func() {
