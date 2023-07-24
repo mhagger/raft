@@ -273,7 +273,7 @@ func TestCloseProposerInflight(t *testing.T) {
 }
 
 func TestPutAndGetKeyValue(t *testing.T) {
-	clusters := []string{"http://127.0.0.1:9021"}
+	clusters := []string{"http://127.0.0.1:10000"}
 
 	proposeC := make(chan string)
 	defer close(proposeC)
