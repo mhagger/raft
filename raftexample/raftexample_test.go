@@ -32,6 +32,7 @@ import (
 )
 
 type peer struct {
+	id          uint64
 	node        *raftNode
 	proposeC    chan string
 	confChangeC chan raftpb.ConfChange
@@ -75,15 +76,15 @@ func newCluster(fsms ...FSM) *cluster {
 	}
 
 	for i, fsm := range fsms {
-		id := uint64(i + 1)
 		peer := peer{
+			id:          uint64(i + 1),
 			proposeC:    make(chan string, 1),
 			confChangeC: make(chan raftpb.ConfChange, 1),
 			fsm:         fsm,
 		}
 
-		snapdir := fmt.Sprintf("raftexample-%d-snap", id)
-		os.RemoveAll(fmt.Sprintf("raftexample-%d", id))
+		snapdir := fmt.Sprintf("raftexample-%d-snap", peer.id)
+		os.RemoveAll(fmt.Sprintf("raftexample-%d", peer.id))
 		os.RemoveAll(snapdir)
 
 		snapshotLogger := zap.NewExample()
@@ -93,7 +94,7 @@ func newCluster(fsms ...FSM) *cluster {
 		}
 
 		peer.node = startRaftNode(
-			id, clus.peerNames, false,
+			peer.id, clus.peerNames, false,
 			peer.fsm, snapshotStorage,
 			peer.proposeC, peer.confChangeC,
 		)
