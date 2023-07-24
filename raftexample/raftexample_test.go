@@ -36,21 +36,19 @@ type peer struct {
 	node        *raftNode
 	proposeC    chan string
 	confChangeC chan raftpb.ConfChange
-	fsm         FSM
 }
 
-func newPeer(id uint64, fsm FSM) *peer {
+func newPeer(id uint64) *peer {
 	peer := peer{
 		id:          id,
 		proposeC:    make(chan string, 1),
 		confChangeC: make(chan raftpb.ConfChange, 1),
-		fsm:         fsm,
 	}
 
 	return &peer
 }
 
-func (peer *peer) start(peerNames []string, join bool) {
+func (peer *peer) start(fsm FSM, peerNames []string, join bool) {
 	snapdir := fmt.Sprintf("raftexample-%d-snap", peer.id)
 	os.RemoveAll(fmt.Sprintf("raftexample-%d", peer.id))
 	os.RemoveAll(snapdir)
@@ -63,7 +61,7 @@ func (peer *peer) start(peerNames []string, join bool) {
 
 	peer.node = startRaftNode(
 		peer.id, peerNames, join,
-		peer.fsm, snapshotStorage,
+		fsm, snapshotStorage,
 		peer.proposeC, peer.confChangeC,
 	)
 }
@@ -105,8 +103,8 @@ func newCluster(fsms ...FSM) *cluster {
 	}
 
 	for i, fsm := range fsms {
-		peer := newPeer(uint64(i+1), fsm)
-		peer.start(clus.peerNames, false)
+		peer := newPeer(uint64(i + 1))
+		peer.start(fsm, clus.peerNames, false)
 		clus.peers = append(clus.peers, peer)
 	}
 
