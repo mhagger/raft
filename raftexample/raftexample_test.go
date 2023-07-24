@@ -33,6 +33,7 @@ import (
 
 type peer struct {
 	id          uint64
+	name        string
 	node        *raftNode
 	proposeC    chan string
 	confChangeC chan raftpb.ConfChange
@@ -41,6 +42,7 @@ type peer struct {
 func newPeer(id uint64) *peer {
 	peer := peer{
 		id:          id,
+		name:        fmt.Sprintf("http://127.0.0.1:%d", 10000+(id-1)),
 		proposeC:    make(chan string, 1),
 		confChangeC: make(chan raftpb.ConfChange, 1),
 	}
@@ -94,18 +96,16 @@ type cluster struct {
 
 // newCluster creates a cluster of n nodes
 func newCluster(fsms ...FSM) *cluster {
-	clus := cluster{
-		peerNames: make([]string, 0, len(fsms)),
-		peers:     make([]*peer, 0, len(fsms)),
-	}
+	clus := cluster{}
+
 	for i := range fsms {
-		clus.peerNames = append(clus.peerNames, fmt.Sprintf("http://127.0.0.1:%d", 10000+i))
+		peer := newPeer(uint64(i + 1))
+		clus.peers = append(clus.peers, peer)
+		clus.peerNames = append(clus.peerNames, peer.name)
 	}
 
-	for i, fsm := range fsms {
-		peer := newPeer(uint64(i + 1))
-		peer.start(fsm, clus.peerNames, false)
-		clus.peers = append(clus.peers, peer)
+	for i, peer := range clus.peers {
+		peer.start(fsms[i], clus.peerNames, false)
 	}
 
 	return &clus
