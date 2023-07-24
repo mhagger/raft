@@ -310,7 +310,7 @@ func TestPutAndGetKeyValue(t *testing.T) {
 	defer srv.Close()
 
 	// wait server started
-	<-time.After(time.Second * 3)
+	time.Sleep(3 * time.Second)
 
 	wantKey, wantValue := "test-key", "test-value"
 	url := fmt.Sprintf("%s/%s", srv.URL, wantKey)
@@ -328,7 +328,7 @@ func TestPutAndGetKeyValue(t *testing.T) {
 	}
 
 	// wait for a moment for processing message, otherwise get would be failed.
-	<-time.After(time.Second)
+	time.Sleep(time.Second)
 
 	resp, err := cli.Get(url)
 	if err != nil {
