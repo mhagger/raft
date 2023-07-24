@@ -330,10 +330,48 @@ func TestPutAndGetKeyValue(t *testing.T) {
 	}
 }
 
+type commitWatcher struct {
+	nullFSM
+	C chan string
+}
+
+func newCommitWatcher(id uint64) *commitWatcher {
+	return &commitWatcher{
+		nullFSM: nullFSM{id},
+		C:       make(chan string, 1),
+	}
+}
+
+func (fsm *commitWatcher) ApplyCommits(commit *commit) error {
+	log.Printf("applying commits to node %d!!!! %v", fsm.id, commit.data)
+	for _, c := range commit.data {
+		fsm.C <- c
+	}
+	close(commit.applyDoneC)
+	return nil
+}
+
 // TestAddNewNode tests adding new node to the existing cluster.
 func TestAddNewNode(t *testing.T) {
-	clus := newCluster(nullFSM{1}, nullFSM{2}, nullFSM{3})
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	cw1 := newCommitWatcher(1)
+	cw2 := newCommitWatcher(2)
+	cw3 := newCommitWatcher(3)
+	clus := newCluster(cw1, cw2, cw3)
 	defer clus.closeNoErrors(t)
+
+	for _, peer := range clus.peers {
+		peer := peer
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := peer.node.ProcessCommits(); err != nil {
+				t.Error("ProcessCommits returned error", err)
+			}
+		}()
+	}
 
 	id := uint64(4)
 	snapdir := fmt.Sprintf("raftexample-%d-snap", id)
@@ -345,14 +383,12 @@ func TestAddNewNode(t *testing.T) {
 	}()
 
 	newNodeURL := "http://127.0.0.1:10004"
-	clus.peers[0].confChangeC <- raftpb.ConfChange{
-		Type:    raftpb.ConfChangeAddNode,
-		NodeID:  id,
-		Context: []byte(newNodeURL),
-	}
-
 	proposeC := make(chan string)
-	defer close(proposeC)
+	defer func() {
+		if proposeC != nil {
+			close(proposeC)
+		}
+	}()
 
 	confChangeC := make(chan raftpb.ConfChange)
 	defer close(confChangeC)
@@ -363,18 +399,46 @@ func TestAddNewNode(t *testing.T) {
 		log.Fatalf("raftexample: %v", err)
 	}
 
-	startRaftNode(
+	cw4 := newCommitWatcher(4)
+	rc := startRaftNode(
 		id, append(clus.peerNames, newNodeURL), true,
-		nullFSM{4}, snapshotStorage,
+		cw4, snapshotStorage,
 		proposeC, confChangeC,
 	)
 
+	wg.Add(1)
 	go func() {
-		proposeC <- "foo"
+		defer wg.Done()
+		rc.ProcessCommits()
 	}()
 
-	if c, ok := <-clus.peers[0].node.commitC; !ok || c.data[0] != "foo" {
-		t.Fatalf("Commit failed")
+	// Ask one of the old nodes to add the new one to the cluster:
+	clus.peers[0].confChangeC <- raftpb.ConfChange{
+		Type:    raftpb.ConfChangeAddNode,
+		NodeID:  id,
+		Context: []byte(newNodeURL),
+	}
+
+	// Propose an update via the new node:
+	proposeC <- "foo"
+
+	// Verify that the update got committed to all of the nodes:
+	for _, cw := range []*commitWatcher{cw1, cw2, cw3, cw4} {
+		select {
+		case c := <-cw.C:
+			if c != "foo" {
+				t.Errorf("Commit failed to node %d", cw.id)
+			}
+		case <-time.After(10 * time.Second):
+			t.Errorf("Timeout before commit arrived at node %d", cw.id)
+		}
+	}
+
+	close(proposeC)
+	proposeC = nil
+
+	if err := rc.Err(); err != nil {
+		t.Error("ProcessCommits returned error", err)
 	}
 }
 
