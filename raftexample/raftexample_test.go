@@ -273,39 +273,24 @@ func TestCloseProposerInflight(t *testing.T) {
 }
 
 func TestPutAndGetKeyValue(t *testing.T) {
-	clusters := []string{"http://127.0.0.1:10000"}
+	peer := newPeer(1)
+	defer func() {
+		close(peer.proposeC)
+		close(peer.confChangeC)
+	}()
 
-	proposeC := make(chan string)
-	defer close(proposeC)
-
-	confChangeC := make(chan raftpb.ConfChange)
-	defer close(confChangeC)
-
-	id := uint64(1)
-	snapshotLogger := zap.NewExample()
-	snapdir := fmt.Sprintf("raftexample-%d-snap", id)
-	snapshotStorage, err := newSnapshotStorage(snapshotLogger, snapdir)
-	if err != nil {
-		log.Fatalf("raftexample: %v", err)
-	}
-
-	kvs, fsm := newKVStore(proposeC)
-
-	node := startRaftNode(
-		id, clusters, false,
-		fsm, snapshotStorage,
-		proposeC, confChangeC,
-	)
+	kvs, fsm := newKVStore(peer.proposeC)
+	peer.start(fsm, []string{peer.name}, false)
 
 	go func() {
-		if err := node.ProcessCommits(); err != nil {
+		if err := peer.node.ProcessCommits(); err != nil {
 			log.Fatalf("raftexample: %v", err)
 		}
 	}()
 
 	srv := httptest.NewServer(&httpKVAPI{
 		store:       kvs,
-		confChangeC: confChangeC,
+		confChangeC: peer.confChangeC,
 	})
 	defer srv.Close()
 
