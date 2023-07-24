@@ -39,6 +39,32 @@ type peer struct {
 	fsm         FSM
 }
 
+func newPeer(id uint64, fsm FSM, peerNames []string) *peer {
+	peer := peer{
+		id:          id,
+		proposeC:    make(chan string, 1),
+		confChangeC: make(chan raftpb.ConfChange, 1),
+		fsm:         fsm,
+	}
+
+	snapdir := fmt.Sprintf("raftexample-%d-snap", peer.id)
+	os.RemoveAll(fmt.Sprintf("raftexample-%d", peer.id))
+	os.RemoveAll(snapdir)
+
+	snapshotLogger := zap.NewExample()
+	snapshotStorage, err := newSnapshotStorage(snapshotLogger, snapdir)
+	if err != nil {
+		log.Fatalf("raftexample: %v", err)
+	}
+
+	peer.node = startRaftNode(
+		peer.id, peerNames, false,
+		peer.fsm, snapshotStorage,
+		peer.proposeC, peer.confChangeC,
+	)
+	return &peer
+}
+
 type nullFSM struct {
 	id uint64
 }
@@ -76,29 +102,8 @@ func newCluster(fsms ...FSM) *cluster {
 	}
 
 	for i, fsm := range fsms {
-		peer := peer{
-			id:          uint64(i + 1),
-			proposeC:    make(chan string, 1),
-			confChangeC: make(chan raftpb.ConfChange, 1),
-			fsm:         fsm,
-		}
-
-		snapdir := fmt.Sprintf("raftexample-%d-snap", peer.id)
-		os.RemoveAll(fmt.Sprintf("raftexample-%d", peer.id))
-		os.RemoveAll(snapdir)
-
-		snapshotLogger := zap.NewExample()
-		snapshotStorage, err := newSnapshotStorage(snapshotLogger, snapdir)
-		if err != nil {
-			log.Fatalf("raftexample: %v", err)
-		}
-
-		peer.node = startRaftNode(
-			peer.id, clus.peerNames, false,
-			peer.fsm, snapshotStorage,
-			peer.proposeC, peer.confChangeC,
-		)
-		clus.peers = append(clus.peers, &peer)
+		peer := newPeer(uint64(i+1), fsm, clus.peerNames)
+		clus.peers = append(clus.peers, peer)
 	}
 
 	return &clus
