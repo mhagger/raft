@@ -281,6 +281,7 @@ func TestPutAndGetKeyValue(t *testing.T) {
 
 	kvs, fsm := newKVStore(peer.proposeC)
 	peer.start(fsm, []string{peer.name}, false)
+	defer peer.cleanup()
 
 	go func() {
 		if err := peer.node.ProcessCommits(); err != nil {
