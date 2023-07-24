@@ -54,7 +54,8 @@ func (nullFSM) RestoreSnapshot(_ []byte) error {
 	return nil
 }
 
-func (nullFSM) ApplyCommits(_ *commit) error {
+func (nullFSM) ApplyCommits(commit *commit) error {
+	close(commit.applyDoneC)
 	return nil
 }
 
